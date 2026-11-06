@@ -5,6 +5,7 @@ import { motion } from "framer-motion";
 import { CheckCircle, XCircle, Mail, ArrowRight, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { authClient } from "@/lib/auth-client";
 
 export function VerificationUI() {
   const [status, setStatus] = useState<"loading" | "success" | "error">(
@@ -23,24 +24,16 @@ export function VerificationUI() {
       }
 
       try {
-        const response = await fetch("/api/auth/verify-email", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ token }),
-        });
+        const { error } = await authClient.verifyEmail({ query: { token } });
 
-        const data = await response.json();
-
-        if (response.ok) {
-          setStatus("success");
-          setMessage(
-            data.message || "Your email has been successfully verified."
-          );
-        } else {
+        if (error) {
           setStatus("error");
           setMessage(
-            data.message || "Failed to verify email. The link may be expired."
+            "This link is invalid or has expired. Sign in with your password and we'll email you a new one."
           );
+        } else {
+          setStatus("success");
+          setMessage("Your email has been successfully verified.");
         }
       } catch {
         setStatus("error");
@@ -104,26 +97,26 @@ export function VerificationUI() {
 
           {/* Action Buttons */}
           {status === "success" && (
-            <Link href="/login">
+            <Link href="/document-analysis">
               <motion.button
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2"
               >
-                Sign In Now <ArrowRight className="h-5 w-5" />
+                Start Analyzing <ArrowRight className="h-5 w-5" />
               </motion.button>
             </Link>
           )}
 
           {status === "error" && (
             <div className="space-y-3">
-              <Link href="/signup">
+              <Link href="/login">
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-4 px-6 rounded-2xl font-semibold text-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center gap-2"
                 >
-                  Try Again <Mail className="h-5 w-5" />
+                  Sign In <Mail className="h-5 w-5" />
                 </motion.button>
               </Link>
             </div>

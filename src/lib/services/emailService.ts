@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { escapeHtml } from '@/lib/utils/html';
 
 const createTransporter = () => {
     return nodemailer.createTransport({
@@ -10,10 +11,18 @@ const createTransporter = () => {
     });
 };
 
+const getAppUrl = () => {
+    const appUrl = process.env.BETTER_AUTH_URL;
+    if (!appUrl) {
+        throw new Error('BETTER_AUTH_URL is not set; cannot build email links');
+    }
+    return appUrl;
+};
+
 export const sendVerificationEmail = async (email: string, token: string, name: string) => {
     const transporter = createTransporter();
 
-    const verificationUrl = `${process.env.NEXTAUTH_URL}/verify-email?token=${token}`;
+    const verificationUrl = `${getAppUrl()}/verify-email?token=${token}`;
 
     const mailOptions = {
         from: {
@@ -46,7 +55,7 @@ export const sendVerificationEmail = async (email: string, token: string, name: 
             <h1 style="color: white; margin: 0; font-size: 28px;">Welcome to Legalyze AI</h1>
           </div>
           <div class="content">
-            <h2 style="color: #1e293b; margin-bottom: 20px;">Hi ${name},</h2>
+            <h2 style="color: #1e293b; margin-bottom: 20px;">Hi ${escapeHtml(name)},</h2>
             <p style="color: #475569; line-height: 1.6; margin-bottom: 20px;">
               Thank you for signing up for Legalyze AI! We're excited to have you on board.
             </p>
@@ -73,19 +82,13 @@ export const sendVerificationEmail = async (email: string, token: string, name: 
     `
     };
 
-    try {
-        await transporter.sendMail(mailOptions);
-        return { success: true };
-    } catch (error) {
-        console.error('Error sending verification email:', error);
-        return { success: false, error };
-    }
+    await transporter.sendMail(mailOptions);
 };
 
 export const sendPasswordResetEmail = async (email: string, token: string, name: string) => {
     const transporter = createTransporter();
 
-    const resetUrl = `${process.env.NEXTAUTH_URL}/reset-password?token=${token}`;
+    const resetUrl = `${getAppUrl()}/reset-password?token=${token}`;
 
     const mailOptions = {
         from: {
@@ -118,7 +121,7 @@ export const sendPasswordResetEmail = async (email: string, token: string, name:
             <h1 style="color: white; margin: 0; font-size: 28px;">Password Reset</h1>
           </div>
           <div class="content">
-            <h2 style="color: #1e293b; margin-bottom: 20px;">Hi ${name},</h2>
+            <h2 style="color: #1e293b; margin-bottom: 20px;">Hi ${escapeHtml(name)},</h2>
             <p style="color: #475569; line-height: 1.6; margin-bottom: 20px;">
               We received a request to reset your password for your Legalyze AI account.
             </p>
@@ -145,11 +148,5 @@ export const sendPasswordResetEmail = async (email: string, token: string, name:
     `
     };
 
-    try {
-        await transporter.sendMail(mailOptions);
-        return { success: true };
-    } catch (error) {
-        console.error('Error sending password reset email:', error);
-        return { success: false, error };
-    }
+    await transporter.sendMail(mailOptions);
 };
