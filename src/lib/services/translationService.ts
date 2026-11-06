@@ -2,8 +2,7 @@ import { TranslateInput } from "@/lib/validators/translate";
 
 interface TranslationResult {
     translatedText: string;
-    method: "gemini" | "service" | "fallback";
-    serviceName?: string;
+    method: "gemini" | "fallback";
 }
 
 interface GeminiResponse {
@@ -54,7 +53,7 @@ export class TranslationService {
 
     /**
      * Main entry point to translate text.
-     * Tries Gemini -> Public Services -> Local Fallback.
+     * Tries Gemini -> Local Fallback.
      */
     static async translate(data: TranslateInput): Promise<TranslationResult> {
         const { text, source, target } = data;
@@ -65,17 +64,7 @@ export class TranslationService {
             return { translatedText: geminiResult, method: "gemini" };
         }
 
-        // 2. Try Public Services
-        const serviceResult = await this.tryPublicServiceTranslate(text, source, target);
-        if (serviceResult) {
-            return {
-                translatedText: serviceResult.translated,
-                method: "service",
-                serviceName: serviceResult.service
-            };
-        }
-
-        // 3. Fallback
+        // 2. Fallback
         const fallbackResult = this.getFallbackTranslation(text);
         return { translatedText: fallbackResult, method: "fallback" };
     }
@@ -127,41 +116,5 @@ export class TranslationService {
         // Simple extraction logic for brevity based on known Gemini response structure
         const p = parsed as GeminiResponse;
         return p?.candidates?.[0]?.content?.parts?.[0]?.text;
-    }
-
-    private static async tryPublicServiceTranslate(text: string, source: string, target: string): Promise<{ translated: string; service: string } | null> {
-        // Simplified for brevity, normally would include the full list from original code
-        const services = [
-            {
-                name: "LibreTranslate",
-                url: "https://libretranslate.com/translate",
-                body: (t: string) => ({ q: t, source, target, format: "text" }),
-                parse: (d: { translatedText?: string }) => d?.translatedText
-            },
-            {
-                name: "ArgosOpenTech",
-                url: "https://translate.argosopentech.com/translate",
-                body: (t: string) => ({ q: t, source, target, format: "text" }),
-                parse: (d: { translatedText?: string }) => d?.translatedText
-            }
-        ];
-
-        for (const svc of services) {
-            try {
-                const res = await fetch(svc.url, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(svc.body(text)),
-                    signal: AbortSignal.timeout(10000),
-                });
-                if (!res.ok) continue;
-                const json = await res.json();
-                const translated = svc.parse(json);
-                if (translated) return { translated, service: svc.name };
-            } catch {
-                continue;
-            }
-        }
-        return null;
     }
 }
