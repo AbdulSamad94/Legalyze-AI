@@ -1,7 +1,7 @@
 """Agent-related data schemas."""
 
 from pydantic import BaseModel, Field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 class SharedContext(BaseModel):
@@ -10,6 +10,9 @@ class SharedContext(BaseModel):
     analysis_stage: str = "starting"
     previous_outputs: Dict[str, str] = Field(default_factory=dict)
     session_id: Optional[str] = None
+    # The outer run's RunConfig, for sub-agents. It holds live model clients, so
+    # it is typed Any to skip validation and excluded from serialization.
+    run_config: Any = Field(default=None, exclude=True)
 
 
 class AgentDecision(BaseModel):

@@ -7,12 +7,12 @@ from agents import (
     GuardrailFunctionOutput,
     Agent,
     TResponseInputItem,
-    Runner,
 )
 from utils import logger
 from schemas import FinalOutput, SharedContext, SensitiveCheckOutput
 from infrastructure import model_manager
 from .agent_prompts import GUARDRAIL_PROMPT
+from .sub_agent_runner import run_sub_agent
 
 # Single-shot, tool-less classifier — should resolve in 1 turn; small buffer only.
 # (Not imported from agent_factory.py to avoid a circular import: agent_factory
@@ -29,7 +29,8 @@ sensitive_check_agent = Agent(
 )
 
 
-@input_guardrail
+# Not parallel: the main model must not run on a document that will be blocked.
+@input_guardrail(run_in_parallel=False)
 async def sensitive_input_guardrail(
     ctx: RunContextWrapper[SharedContext],
     agent: Agent,
@@ -49,13 +50,8 @@ async def sensitive_input_guardrail(
     else:
         last_input = input
 
-    if not ctx.context:
-        ctx.context = SharedContext(document_text=last_input)
-    else:
-        ctx.context.document_text = last_input
-
-    result = await Runner.run(
-        sensitive_check_agent, last_input, max_turns=GUARDRAIL_AGENT_MAX_TURNS
+    result = await run_sub_agent(
+        ctx, sensitive_check_agent, last_input, max_turns=GUARDRAIL_AGENT_MAX_TURNS
     )
 
     status = "BLOCKED" if result.final_output.contains_sensitive_info else "PASSED"
@@ -83,7 +79,7 @@ async def final_output_validation_guardrail(
 
     has_summary = bool(output.summary and len(output.summary.strip()) > 10)
     has_risks = output.risks is not None and isinstance(output.risks, list)
-    has_verdict = bool(output.verdict and len(output.verdict.strip()) > 5)
+    has_verdict = bool(output.verdict and output.verdict.strip())
     has_disclaimer = bool(output.disclaimer and len(output.disclaimer.strip()) > 10)
 
     is_valid = has_summary and has_risks and has_verdict and has_disclaimer

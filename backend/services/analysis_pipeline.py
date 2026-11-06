@@ -13,10 +13,10 @@ from agents import (
     MaxTurnsExceeded,
     ModelBehaviorError,
 )
-from agents.models import get_default_model
 from config import settings
 from schemas import SharedContext, AgentDecision
 from infrastructure import model_manager
+from core.untrusted_document import wrap_untrusted_document
 from core import agent_prompts
 from core.agent_factory import (
     analysis_agent,
@@ -48,16 +48,12 @@ AGENT_RETRY = RetryConfig(
 
 
 def get_cache_version() -> str:
-    """Fingerprint everything that determines an analysis, so changing it misses the cache.
-
-    Sub-agents set no model of their own, so they run on the SDK default rather
-    than settings.openai.model; both names count.
-    """
+    """Fingerprint everything that determines an analysis, so changing it misses the cache."""
     prompts = {
         name: value for name, value in vars(agent_prompts).items() if name.endswith("_PROMPT")
     }
     fingerprint = json.dumps(
-        {"prompts": prompts, "models": [settings.openai.model, get_default_model()]},
+        {"prompts": prompts, "model": settings.openai.model},
         sort_keys=True,
     )
     return hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
@@ -101,6 +97,16 @@ def estimate_processing_time(text_length: int) -> int:
         return 45
     else:
         return 60
+
+
+def _without_whitespace(text: str) -> str:
+    return "".join(text.split()).casefold()
+
+
+def is_quoted_in_document(quote: str, document: str) -> bool:
+    """Whether `quote` appears in `document`, ignoring whitespace and case."""
+    needle = _without_whitespace(quote)
+    return bool(needle) and needle in _without_whitespace(document)
 
 
 def get_document_insights(text: str) -> Dict[str, Any]:
@@ -151,7 +157,7 @@ async def run_demo_pipeline(
         )
         await asyncio.sleep(0.5)
 
-        context = SharedContext(document_text=user_text, analysis_stage="starting")
+        context = SharedContext(document_text=user_text, analysis_stage="starting", run_config=config)
 
         # Step 3: Document tpye detect
         yield create_status_message(
@@ -162,7 +168,7 @@ async def run_demo_pipeline(
 
         decision_result = await Runner.run(
             main_agent,
-            user_text,
+            wrap_untrusted_document(user_text),
             run_config=config,
             context=context,
             max_turns=MAIN_AGENT_MAX_TURNS,
@@ -190,7 +196,7 @@ async def run_demo_pipeline(
             # ctx.context.document_text instead of the model transcribing it)
             analysis_output = await Runner.run(
                 analysis_agent,
-                user_text,
+                wrap_untrusted_document(user_text),
                 run_config=config,
                 context=context,
                 max_turns=ANALYSIS_AGENT_MAX_TURNS,
@@ -336,7 +342,12 @@ async def run_enhanced_pipeline_streamed(
     user_text: str, filename: str, session_id: str
 ) -> AsyncGenerator[str, None]:
     """Enhanced pipeline with caching and retry logic."""
-    config = RunConfig(tracing_disabled=False, model=model_manager.get_openai_model(), model_provider=None)
+    config = RunConfig(
+        tracing_disabled=False,
+        trace_include_sensitive_data=False,
+        model=model_manager.get_openai_model(),
+        model_provider=None,
+    )
 
     # Initialize cache connection
     await cache_manager.connect()
@@ -392,7 +403,7 @@ async def run_enhanced_pipeline_streamed(
         )
         await asyncio.sleep(1)
 
-        context = SharedContext(document_text=user_text, analysis_stage="starting")
+        context = SharedContext(document_text=user_text, analysis_stage="starting", run_config=config)
 
         # Check cache first for this document
         cache_version = get_cache_version()
@@ -431,7 +442,7 @@ async def run_enhanced_pipeline_streamed(
         decision_result = await RetryHandler.execute(
             lambda: Runner.run(
                 main_agent,
-                user_text,
+                wrap_untrusted_document(user_text),
                 run_config=config,
                 context=context,
                 max_turns=MAIN_AGENT_MAX_TURNS,
@@ -464,7 +475,7 @@ async def run_enhanced_pipeline_streamed(
             analysis_output = await RetryHandler.execute(
                 lambda: Runner.run(
                     analysis_agent,
-                    user_text,
+                    wrap_untrusted_document(user_text),
                     run_config=config,
                     context=context,
                     max_turns=ANALYSIS_AGENT_MAX_TURNS,
@@ -522,6 +533,7 @@ async def run_enhanced_pipeline_streamed(
                 }
 
             normalized_risks = []
+            cleared_clauses = 0
             for r in analysis_dict.get("risks", []):
                 try:
                     rd = r.model_dump() if hasattr(r, "model_dump") else dict(r)
@@ -535,7 +547,18 @@ async def run_enhanced_pipeline_streamed(
                     "recommendation": str(rd.get("recommendation", "")),
                     "clause_reference": str(rd.get("clause_reference", "")),
                 }
+                if norm["clause_reference"] and not is_quoted_in_document(
+                    norm["clause_reference"], user_text
+                ):
+                    norm["clause_reference"] = ""
+                    cleared_clauses += 1
                 normalized_risks.append(norm)
+
+            if cleared_clauses:
+                logger.logger.warning(
+                    f"[CLAUSES] session={session_id}, cleared {cleared_clauses} "
+                    "clause references not found in the document"
+                )
 
             analysis_dict["risks"] = normalized_risks
 
@@ -622,12 +645,23 @@ async def run_enhanced_pipeline_streamed(
         error_result = {
             "type": "error",
             "message": "Your document contains sensitive information that cannot be processed for security and privacy reasons.",
-            "details": str(e.guardrail_result.output.output_info),
             "session_id": session_id,
         }
         metrics.log_guardrail_triggered(session_id, "input_guardrail", str(e))
         yield create_status_message(
             "Security Check Failed", "failed", error_result["message"]
+        )
+        yield f"data: {json.dumps({'final_result': error_result}, default=str)}\n\n"
+
+    except OutputGuardrailTripwireTriggered as e:
+        error_result = {
+            "type": "error",
+            "message": "Analysis output validation failed. Please try again with a different document.",
+            "session_id": session_id,
+        }
+        metrics.log_guardrail_triggered(session_id, "output_guardrail", str(e))
+        yield create_status_message(
+            "Validation Check Failed", "failed", error_result["message"]
         )
         yield f"data: {json.dumps({'final_result': error_result}, default=str)}\n\n"
 

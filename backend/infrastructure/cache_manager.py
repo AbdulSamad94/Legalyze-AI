@@ -16,23 +16,40 @@ class CacheManager:
         self.client: Optional[redis.Redis] = None
 
     async def connect(self) -> bool:
-        """Connect to Redis cache"""
+        """Connect to Redis cache, reusing the existing client if there is one"""
+        if self.client:
+            return True
+
         if not self.config.is_configured:
             return False
 
+        client = redis.Redis(
+            host=self.config.host,
+            port=self.config.port,
+            password=self.config.password,
+            ssl=self.config.ssl,
+            decode_responses=False
+        )
         try:
-            self.client = redis.Redis(
-                host=self.config.host,
-                port=self.config.port,
-                password=self.config.password,
-                ssl=self.config.ssl,
-                decode_responses=False
-            )
-            await self.client.ping()
-            return True
+            await client.ping()
         except Exception as e:
             print(f"[CACHE] Failed to connect: {e}")
+            await self._close_quietly(client)
             return False
+
+        # A concurrent request may have connected while this ping was pending.
+        if self.client:
+            await self._close_quietly(client)
+        else:
+            self.client = client
+        return True
+
+    async def _close_quietly(self, client: redis.Redis) -> None:
+        """Close a discarded client; failing to close it must not fail the request"""
+        try:
+            await client.close()
+        except Exception as e:
+            print(f"[CACHE] Failed to close client: {e}")
 
     def _generate_key(self, document_text: str, version: str) -> str:
         """Generate cache key from the analysis version and document hash"""
@@ -73,8 +90,9 @@ class CacheManager:
 
     async def close(self):
         """Close cache connection"""
-        if self.client:
-            await self.client.close()
+        client, self.client = self.client, None
+        if client:
+            await client.close()
 
 
 # Global cache instance
