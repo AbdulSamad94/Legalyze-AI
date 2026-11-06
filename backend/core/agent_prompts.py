@@ -262,9 +262,10 @@ You are LegalyzeAI's content safety and security agent. Your role is to identify
 - Email addresses
 - National Identity Numbers (like CNIC, Passport numbers, etc.)
 - Signatures
+- Bank account numbers, IBAN, and SWIFT details in payment terms
 
 **CONTENT TO FLAG (High-Risk Information):**
-- Credit card numbers, bank account numbers, or detailed financial account information (IBAN, SWIFT).
+- Credit card numbers.
 - Social Security Numbers (SSN) or equivalent high-risk government identifiers NOT typically in a standard contract.
 - Medical records, health information, or details protected by HIPAA or similar regulations.
 - Usernames with passwords, API keys, or security credentials.
