@@ -25,6 +25,7 @@ from tests.fakes import text_output, tool_call
 MARKER = "ZEBRA-MARKER-7f3a91"
 DOCUMENT = f"This Non-Disclosure Agreement binds Acme and Beta. Secret clause: {MARKER}."
 
+CLEAN_JSON = json.dumps({"contains_sensitive_info": False, "reasoning": "Nothing flagged."})
 DETECTOR_JSON = json.dumps(
     {
         "is_legal_document": True,
@@ -39,6 +40,7 @@ RISKS_JSON = json.dumps({"risks": [], "overall_risk_level": "low"})
 FINAL_JSON = json.dumps({"summary": f"Quotes {MARKER}.", "risks": [], "verdict": "safe"})
 
 SCRIPTED_TURNS = [
+    text_output(CLEAN_JSON),
     tool_call("detect_document_type"),
     text_output(DETECTOR_JSON),
     text_output(DECISION_JSON),
@@ -163,9 +165,9 @@ async def test_enhanced_pipeline_keeps_tracing_every_step_including_sub_agents(
     spans_by_type = {}
     for span in captured.spans:
         spans_by_type.setdefault(span.span_data.type, []).append(span)
-    assert len(spans_by_type["response"]) == 10
+    assert len(spans_by_type["response"]) == 11
     assert len(spans_by_type["function"]) == 4
-    assert len(spans_by_type["agent"]) == 6
+    assert len(spans_by_type["agent"]) == 7
 
     by_id = {s.span_id: s for s in captured.spans}
 
