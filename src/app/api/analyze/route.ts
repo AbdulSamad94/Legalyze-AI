@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth-server";
 import { AnalysisService } from "@/lib/services/analysisService";
 import { handleApiError } from "@/lib/api-utils";
@@ -121,9 +121,12 @@ export async function POST(req: NextRequest) {
 
         const [dbStreamClone, forwardStream] = response.body.tee();
 
-        // Use the Service to handle the background saving
-        // deliberately not awaiting this to allow streaming to continue
-        AnalysisService.collectAndSaveAnalysis(dbStreamClone, userId, file.name);
+        // Start reading now and pass after() the promise, not a callback: a
+        // callback would only run once the response closes, leaving this tee
+        // branch to buffer the whole stream in memory until then. The promise
+        // form hands the save to waitUntil immediately, so it outlives the
+        // response and a client disconnect, up to the function's max duration.
+        after(AnalysisService.collectAndSaveAnalysis(dbStreamClone, userId, file.name));
 
         const headers: Record<string, string> = {
             "Content-Type": "text/event-stream",

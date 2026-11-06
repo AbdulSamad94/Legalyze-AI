@@ -1,6 +1,32 @@
 import { db } from "@/lib/db/client";
 import { analyses } from "@/lib/db/schema";
 import { LegalAnalysisResult, parseStreamData } from "@/lib/types";
+import { DrizzleQueryError } from "drizzle-orm/errors";
+
+const MAX_INSERT_ATTEMPTS = 2;
+const INSERT_RETRY_DELAY_MS = 500;
+
+// A DrizzleQueryError's message embeds the query params, which hold the
+// document's summary and risks, so only its underlying cause may be logged.
+function safeErrorMessage(error: unknown): string {
+    const source = error instanceof DrizzleQueryError ? error.cause : error;
+    return source instanceof Error ? source.message : "Unknown error";
+}
+
+async function insertWithRetry(row: typeof analyses.$inferInsert) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            // A lost acknowledgement can mean the first attempt committed; the
+            // retry reuses the row's id, so it must not insert a second copy.
+            await db.insert(analyses).values(row).onConflictDoNothing();
+            return;
+        } catch (error) {
+            if (attempt >= MAX_INSERT_ATTEMPTS) throw error;
+            console.warn(`[AnalysisService] Insert attempt ${attempt} failed, retrying: ${safeErrorMessage(error)}`);
+            await new Promise((resolve) => setTimeout(resolve, INSERT_RETRY_DELAY_MS));
+        }
+    }
+}
 
 export class AnalysisService {
     static async collectAndSaveAnalysis(
@@ -45,7 +71,7 @@ export class AnalysisService {
             }
 
             if (analysisResult.summary && analysisResult.risks && analysisResult.verdict) {
-                await db.insert(analyses).values({
+                await insertWithRetry({
                     id: crypto.randomUUID(),
                     userId,
                     documentName,
@@ -60,7 +86,9 @@ export class AnalysisService {
                 console.error("[AnalysisService] Missing required fields in analysis result.");
             }
         } catch (error) {
-            console.error("[AnalysisService] Error collecting and saving analysis:", error);
+            console.error(
+                `[AnalysisService] ANALYSIS NOT SAVED for user ${userId}, document "${documentName}": ${safeErrorMessage(error)}`
+            );
         }
     }
 }
