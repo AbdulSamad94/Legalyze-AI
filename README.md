@@ -80,6 +80,13 @@ TO_EMAIL="..."
 NEXT_PUBLIC_GA_ID=""
 ```
 
+### Tests
+
+```bash
+pnpm test                    # frontend (Vitest)
+cd backend && uv run pytest  # backend (pytest, runs offline)
+```
+
 ### Database migrations
 
 ```bash
