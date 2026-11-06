@@ -37,6 +37,6 @@ Full findings, evidence, and severity-ranked flaws: **see `AUDIT.md`** (last run
 - `zod` **is** actually used (validators + `api-utils.ts`'s `ZodError` handling) — don't assume it's dead just because a naive grep for one quote style misses it.
 - Uploading a `.pdf` or `.docx` today does not extract real text — see `AUDIT.md` C1. If you're debugging "weird" analysis results for non-`.txt` files, start there before assuming it's a prompt/model problem.
 - `/api/demo` and `/api/report` have no auth and no rate limiting — don't assume request volume there is bounded the way `/api/analyze` is.
-- No test suite exists yet anywhere in the repo — there's no harness to extend; the first test added will need to also set up the harness.
+- Tests: frontend uses Vitest (`pnpm test`; files sit beside the code as `src/**/*.test.{ts,tsx}`, and component tests add a `// @vitest-environment jsdom` header). Backend uses pytest (`cd backend && uv run pytest`); `backend/tests/conftest.py` pins the environment so the suite stays offline, and `backend/tests/fakes.py` has a `FakeModel` for driving the real `Runner` without network calls.
 
 For the full evidence trail behind every claim above (file/line citations, severity ranking, and the recommended fix order), see **`AUDIT.md`**.
