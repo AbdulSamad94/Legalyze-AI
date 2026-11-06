@@ -13,7 +13,7 @@ Full findings, evidence, and severity-ranked flaws: **see `AUDIT.md`** (last run
 - `components/home/` — homepage sections (Hero, Features, Demo, etc.). `Demo.tsx` hits the **unauthenticated** `/api/demo` path.
 - `lib/auth.ts` — better-auth server config (single source of truth for social linking, email verification, session policy). `lib/auth-server.ts` — `getSession()`/`requireAuth()` helpers, use these instead of re-reading cookies. `lib/auth-client.ts` — client-side better-auth hooks (`useSession`, `signIn`, etc.).
 - `lib/db/` — Drizzle schema + client, targets Neon Postgres. `drizzle/migrations/0000_initial_schema.sql` is currently the only migration and matches the schema.
-- `lib/services/analysisService.ts` — consumes the tee'd SSE stream from `/api/analyze` and persists the final result; fire-and-forget by design (not awaited in the route handler).
+- `lib/services/analysisService.ts` — consumes the tee'd SSE stream from `/api/analyze` and persists the final result; not awaited in the route handler, but registered with `after()` so it survives the response finishing or the client disconnecting (up to the function's max duration).
 
 **Backend — `backend/`** (FastAPI, Python ≥3.12, `uv`-managed)
 - `app.py` — FastAPI app, CORS, startup/shutdown (model/cache/session init), health endpoints.
