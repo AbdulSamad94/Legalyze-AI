@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { getTrustedOrigins } from "@/lib/auth-origins";
 import { db } from "@/lib/db/client";
 import { sendVerificationEmail } from "@/lib/services/emailService";
 
@@ -39,11 +40,7 @@ export const auth = betterAuth({
       },
     },
   },
-  trustedOrigins: [
-    "http://localhost:3000",
-    "https://legalyze-ai.vercel.app",
-    "https://*.vercel.app",
-  ],
+  trustedOrigins: getTrustedOrigins(process.env.VERCEL_URL),
   account: {
     accountLinking: {
       enabled: true,
