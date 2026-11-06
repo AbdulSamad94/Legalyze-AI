@@ -1,6 +1,6 @@
 """Factory for creating configured agents with tools and guardrails."""
 
-from agents import Agent, RunContextWrapper, Runner, enable_verbose_stdout_logging, function_tool
+from agents import Agent, RunContextWrapper, enable_verbose_stdout_logging, function_tool
 from schemas import FinalOutput, AgentDecision, SharedContext
 from infrastructure import model_manager
 from .agent_prompts import ANALYSIS_AGENT_PROMPT, MAIN_AGENT_PROMPT
@@ -14,6 +14,7 @@ from .guardrails import (
     sensitive_input_guardrail,
     final_output_validation_guardrail,
 )
+from .sub_agent_runner import run_sub_agent
 
 enable_verbose_stdout_logging()
 
@@ -59,8 +60,8 @@ ANALYSIS_AGENT_MAX_TURNS = 10
     description_override="Detects document type and classifies if it's a legal document.",
 )
 async def detect_document_type_tool(ctx: RunContextWrapper[SharedContext]) -> str:
-    result = await Runner.run(
-        document_detector_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
+    result = await run_sub_agent(
+        ctx, document_detector_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
     )
     return result.final_output.model_dump_json()
 
@@ -70,8 +71,8 @@ async def detect_document_type_tool(ctx: RunContextWrapper[SharedContext]) -> st
     description_override="Summarizes the legal document with key points and business implications.",
 )
 async def summarize_document_tool(ctx: RunContextWrapper[SharedContext]) -> str:
-    result = await Runner.run(
-        summarizer_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
+    result = await run_sub_agent(
+        ctx, summarizer_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
     )
     return result.final_output.model_dump_json()
 
@@ -81,8 +82,8 @@ async def summarize_document_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     description_override="Identifies legal and business risks in the document.",
 )
 async def detect_risks_tool(ctx: RunContextWrapper[SharedContext]) -> str:
-    result = await Runner.run(
-        risk_detector_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
+    result = await run_sub_agent(
+        ctx, risk_detector_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
     )
     return result.final_output.model_dump_json()
 
@@ -92,8 +93,8 @@ async def detect_risks_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     description_override="Analyzes specific contract clauses for fairness and clarity.",
 )
 async def check_clause_tool(ctx: RunContextWrapper[SharedContext]) -> str:
-    result = await Runner.run(
-        clause_checker_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
+    result = await run_sub_agent(
+        ctx, clause_checker_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
     )
     return str(result.final_output)
 

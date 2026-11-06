@@ -103,7 +103,7 @@ async def run_demo_pipeline(
         )
         await asyncio.sleep(0.5)
 
-        context = SharedContext(document_text=user_text, analysis_stage="starting")
+        context = SharedContext(document_text=user_text, analysis_stage="starting", run_config=config)
 
         # Step 3: Document tpye detect
         yield create_status_message(
@@ -344,7 +344,7 @@ async def run_enhanced_pipeline_streamed(
         )
         await asyncio.sleep(1)
 
-        context = SharedContext(document_text=user_text, analysis_stage="starting")
+        context = SharedContext(document_text=user_text, analysis_stage="starting", run_config=config)
 
         # Check cache first for this document
         cached_result = await cache_manager.get(user_text)
