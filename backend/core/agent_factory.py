@@ -57,6 +57,7 @@ ANALYSIS_AGENT_MAX_TURNS = 10
 @function_tool(
     name_override="detect_document_type",
     description_override="Detects document type and classifies if it's a legal document.",
+    failure_error_function=None,
 )
 async def detect_document_type_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     result = await Runner.run(
@@ -68,6 +69,7 @@ async def detect_document_type_tool(ctx: RunContextWrapper[SharedContext]) -> st
 @function_tool(
     name_override="summarize_document",
     description_override="Summarizes the legal document with key points and business implications.",
+    failure_error_function=None,
 )
 async def summarize_document_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     result = await Runner.run(
@@ -79,6 +81,7 @@ async def summarize_document_tool(ctx: RunContextWrapper[SharedContext]) -> str:
 @function_tool(
     name_override="detect_risks",
     description_override="Identifies legal and business risks in the document.",
+    failure_error_function=None,
 )
 async def detect_risks_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     result = await Runner.run(
@@ -90,6 +93,7 @@ async def detect_risks_tool(ctx: RunContextWrapper[SharedContext]) -> str:
 @function_tool(
     name_override="check_clause",
     description_override="Analyzes specific contract clauses for fairness and clarity.",
+    failure_error_function=None,
 )
 async def check_clause_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     result = await Runner.run(

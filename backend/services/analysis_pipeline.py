@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import time
 from typing import AsyncGenerator, Dict, Any
@@ -12,8 +13,11 @@ from agents import (
     MaxTurnsExceeded,
     ModelBehaviorError,
 )
+from agents.models import get_default_model
+from config import settings
 from schemas import SharedContext, AgentDecision
 from infrastructure import model_manager
+from core import agent_prompts
 from core.agent_factory import (
     analysis_agent,
     main_agent,
@@ -41,6 +45,50 @@ AGENT_RETRY = RetryConfig(
         OutputGuardrailTripwireTriggered,
     ),
 )
+
+
+def get_cache_version() -> str:
+    """Fingerprint everything that determines an analysis, so changing it misses the cache.
+
+    Sub-agents set no model of their own, so they run on the SDK default rather
+    than settings.openai.model; both names count.
+    """
+    prompts = {
+        name: value for name, value in vars(agent_prompts).items() if name.endswith("_PROMPT")
+    }
+    fingerprint = json.dumps(
+        {"prompts": prompts, "models": [settings.openai.model, get_default_model()]},
+        sort_keys=True,
+    )
+    return hashlib.sha256(fingerprint.encode()).hexdigest()[:16]
+
+
+def build_friendly_message(filename: str, summary: str) -> str:
+    if summary:
+        return f"Analysis complete. {summary[:250]}..."
+    return f"Your analysis for '{filename}' is complete. Here is a summary of our findings, key risks identified, and our final verdict."
+
+
+def to_cacheable_result(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Drop everything specific to one upload: the cache is shared between users."""
+    shared = {k: v for k, v in result.items() if k not in ("session_id", "friendly_message")}
+    shared["document_info"] = {
+        k: v for k, v in result["document_info"].items() if k not in ("filename", "processed_at")
+    }
+    return shared
+
+
+def from_cached_result(cached: Dict[str, Any], filename: str, session_id: str) -> Dict[str, Any]:
+    return {
+        **cached,
+        "document_info": {
+            **cached["document_info"],
+            "filename": filename,
+            "processed_at": datetime.now().isoformat(),
+        },
+        "friendly_message": build_friendly_message(filename, cached["analysis"]["summary"]),
+        "session_id": session_id,
+    }
 
 
 def estimate_processing_time(text_length: int) -> int:
@@ -347,7 +395,8 @@ async def run_enhanced_pipeline_streamed(
         context = SharedContext(document_text=user_text, analysis_stage="starting")
 
         # Check cache first for this document
-        cached_result = await cache_manager.get(user_text)
+        cache_version = get_cache_version()
+        cached_result = await cache_manager.get(user_text, cache_version)
         if cached_result:
             metrics.log_cache_hit(session_id)
             yield create_status_message(
@@ -357,7 +406,7 @@ async def run_enhanced_pipeline_streamed(
                 30,
             )
             # Use cached result and skip to report generation
-            final_result = cached_result
+            final_result = from_cached_result(cached_result, filename, session_id)
             yield create_status_message(
                 "Report Ready",
                 "completed",
@@ -490,9 +539,7 @@ async def run_enhanced_pipeline_streamed(
 
             analysis_dict["risks"] = normalized_risks
 
-            friendly_message = f"Your analysis for '{filename}' is complete. Here is a summary of our findings, key risks identified, and our final verdict."
-            if summary := analysis_dict.get("summary"):
-                friendly_message = f"Analysis complete. {summary[:250]}..."
+            friendly_message = build_friendly_message(filename, analysis_dict.get("summary"))
 
             final_result = {
                 "type": "legal_analysis",
@@ -518,7 +565,7 @@ async def run_enhanced_pipeline_streamed(
             }
 
             # Cache the result for future identical documents
-            await cache_manager.set(user_text, final_result)
+            await cache_manager.set(user_text, cache_version, to_cacheable_result(final_result))
             metrics.log_pipeline_step(session_id, "caching", "completed")
 
             # Calculate processing time and total token usage across both agent runs
