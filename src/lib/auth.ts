@@ -1,7 +1,10 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { db } from "@/lib/db/client";
-import { sendVerificationEmail } from "@/lib/services/emailService";
+import {
+  sendPasswordResetEmail,
+  sendVerificationEmail,
+} from "@/lib/services/emailService";
 
 export const auth = betterAuth({
   appName: "LegalyzeAI",
@@ -53,16 +56,24 @@ export const auth = betterAuth({
   },
   emailVerification: {
     sendVerificationEmail: async ({ user, token }) => {
-      await sendVerificationEmail(user.email, token, user.name || "User");
+      // Public /send-verification-email rethrows sender errors, which would
+      // reveal that an unverified account exists for the address.
+      try {
+        await sendVerificationEmail(user.email, token, user.name || "User");
+      } catch (error) {
+        console.error("Failed to send verification email:", error);
+      }
     },
     sendOnSignUp: true,
+    sendOnSignIn: true,
+    expiresIn: 60 * 60 * 24, // 24 hours, as promised in the email
     autoSignInAfterVerification: true,
   },
   emailAndPassword: {
     enabled: true,
     requireEmailVerification: true,
-    sendResetPassword: async ({ user, url }) => {
-      console.log(`Password reset link for ${user.email}: ${url}`);
+    sendResetPassword: async ({ user, token }) => {
+      await sendPasswordResetEmail(user.email, token, user.name || "User");
     },
   },
   advanced: {

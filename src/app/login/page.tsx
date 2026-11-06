@@ -74,9 +74,11 @@ const LoginPage = () => {
           },
           onError: (err) => {
             const errorMessage =
-              err?.error?.message ||
-              (typeof err === "string" ? err : null) ||
-              "Invalid email or password";
+              err?.error?.code === "EMAIL_NOT_VERIFIED"
+                ? "Please verify your email first. We've sent a new verification link to your inbox."
+                : err?.error?.message ||
+                  (typeof err === "string" ? err : null) ||
+                  "Invalid email or password";
             setError(errorMessage);
             setIsLoading(false);
           },
