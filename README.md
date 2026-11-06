@@ -67,6 +67,9 @@ GITHUB_CLIENT_SECRET="..."
 
 # FastAPI backend
 WEB_URL="http://127.0.0.1:8000"   # or your deployed FastAPI Cloud URL
+# Shared secret sent to the backend. Server-side only, never NEXT_PUBLIC_.
+# Must equal BACKEND_API_SECRET on the backend. Generate: openssl rand -hex 32
+BACKEND_API_SECRET="..."
 
 # Bug report emails (src/app/api/report/route.ts)
 SMTP_HOST="..."

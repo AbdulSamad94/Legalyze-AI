@@ -34,6 +34,17 @@ class RateLimitConfig:
 
 
 @dataclass
+class BackendAuthConfig:
+    """Shared secret proving a request came from the Next.js server"""
+    secret: str = os.getenv("BACKEND_API_SECRET", "")
+
+    @property
+    def is_configured(self) -> bool:
+        """Check if the shared secret is set"""
+        return bool(self.secret)
+
+
+@dataclass
 class OpenAIConfig:
     """OpenAI API configuration"""
     api_key: str = os.getenv("OPENAI_API_KEY", "")
@@ -77,6 +88,7 @@ class AppConfig:
     # Subsystems
     redis: RedisConfig = None
     rate_limit: RateLimitConfig = None
+    backend_auth: BackendAuthConfig = None
     openai: OpenAIConfig = None
     openrouter: OpenRouterConfig = None
 
@@ -86,6 +98,8 @@ class AppConfig:
             self.redis = RedisConfig()
         if self.rate_limit is None:
             self.rate_limit = RateLimitConfig()
+        if self.backend_auth is None:
+            self.backend_auth = BackendAuthConfig()
         if self.openai is None:
             self.openai = OpenAIConfig()
         if self.openrouter is None:
@@ -99,6 +113,8 @@ class AppConfig:
             issues.append("OPENAI_API_KEY not configured")
         if not self.openrouter.is_configured:
             issues.append("OPEN_ROUTER_KEY not configured")
+        if not self.backend_auth.is_configured:
+            issues.append("BACKEND_API_SECRET not configured (API routes will return 503)")
         if not self.redis.is_configured:
             issues.append("REDIS not configured (will run in degraded mode)")
 
