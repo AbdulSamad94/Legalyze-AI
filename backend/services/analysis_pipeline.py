@@ -13,7 +13,6 @@ from agents import (
     MaxTurnsExceeded,
     ModelBehaviorError,
 )
-from agents.models import get_default_model
 from config import settings
 from schemas import SharedContext, AgentDecision
 from infrastructure import model_manager
@@ -49,16 +48,12 @@ AGENT_RETRY = RetryConfig(
 
 
 def get_cache_version() -> str:
-    """Fingerprint everything that determines an analysis, so changing it misses the cache.
-
-    Sub-agents set no model of their own, so they run on the SDK default rather
-    than settings.openai.model; both names count.
-    """
+    """Fingerprint everything that determines an analysis, so changing it misses the cache."""
     prompts = {
         name: value for name, value in vars(agent_prompts).items() if name.endswith("_PROMPT")
     }
     fingerprint = json.dumps(
-        {"prompts": prompts, "models": [settings.openai.model, get_default_model()]},
+        {"prompts": prompts, "model": settings.openai.model},
         sort_keys=True,
     )
     return hashlib.sha256(fingerprint.encode()).hexdigest()[:16]

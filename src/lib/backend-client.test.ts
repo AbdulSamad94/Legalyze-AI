@@ -22,9 +22,15 @@ vi.mock("@/lib/db/client", () => {
     db: {
       transaction: async (work: (t: typeof tx) => unknown) => work(tx),
       insert: () => ({ values: async () => undefined }),
+      update: tx.update,
     },
   };
 });
+
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: vi.fn(),
+}));
 
 function uploadRequest(path: string, headers: Record<string, string> = {}) {
   const body = new FormData();

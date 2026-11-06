@@ -4,6 +4,7 @@ import asyncio
 import json
 
 import pytest
+from agents.models.interface import Model
 
 import core.agent_factory as agent_factory
 import core.agent_prompts as agent_prompts
@@ -14,6 +15,7 @@ from core.agent_definitions import (
     risk_detector_agent,
     summarizer_agent,
 )
+from core.guardrails import sensitive_check_agent
 from infrastructure import cache_manager, model_manager
 from services.analysis_pipeline import run_demo_pipeline, run_enhanced_pipeline_streamed
 from tests.fakes import FakeModel, text_output, tool_call
@@ -30,6 +32,7 @@ DEMO_ERROR_MESSAGE = (
     "Sorry, something went wrong during analysis. Please try uploading your document again."
 )
 
+CLEAN = '{"contains_sensitive_info": false, "reasoning": "Nothing flagged."}'
 DECISION = '{"action": "analyze_document", "reasoning": "A contract.", "confidence_score": 0.9}'
 DETECTION = (
     '{"is_legal_document": true, "document_type": "contract",'
@@ -92,9 +95,41 @@ def working_sub_agents(monkeypatch):
     monkeypatch.setattr(clause_checker_agent, "model", FakeModel([[text_output("Fair.")]]))
 
 
+class AgentRoutedModel(Model):
+    """The run's single model, sending each call to the fake scripted for that agent.
+
+    Sub-agents and the guardrail all run on the run's model, so these tests can
+    only fail one of them by telling the calls apart.
+    """
+
+    def __init__(self, main_model):
+        self.main_model = main_model
+        self.guardrail_model = FakeModel([[text_output(CLEAN)]])
+
+    def _target(self, system_instructions):
+        if system_instructions == sensitive_check_agent.instructions:
+            return self.guardrail_model
+        for agent in (
+            document_detector_agent,
+            summarizer_agent,
+            risk_detector_agent,
+            clause_checker_agent,
+        ):
+            if system_instructions == agent.instructions:
+                return agent.model
+        return self.main_model
+
+    async def get_response(self, system_instructions, input, *args, **kwargs):
+        target = self._target(system_instructions)
+        return await target.get_response(system_instructions, input, *args, **kwargs)
+
+    def stream_response(self, *args, **kwargs):
+        raise NotImplementedError("The pipelines under test use Runner.run, not streaming.")
+
+
 def use_main_model(monkeypatch, turns):
     model = FakeModel(turns)
-    monkeypatch.setattr(model_manager, "openai_model", model)
+    monkeypatch.setattr(model_manager, "openai_model", AgentRoutedModel(model))
     return model
 
 
@@ -179,12 +214,11 @@ async def test_deterministic_sub_agent_failure_runs_once(monkeypatch, redis):
 
 
 async def test_sub_agent_turn_limit_runs_once_with_the_turn_limit_message(monkeypatch, redis):
-    use_main_model(monkeypatch, main_turns() + analysis_turns())
+    main_model = use_main_model(monkeypatch, main_turns() + analysis_turns())
     monkeypatch.setattr(agent_factory, "SUB_AGENT_MAX_TURNS", 0)
     # Detection also runs a sub-agent, so the very first tool call hits the limit.
     detector_model = FakeModel([[text_output(DETECTION)]])
     monkeypatch.setattr(document_detector_agent, "model", detector_model)
-    main_model = model_manager.openai_model
 
     result = final_result(await run_enhanced())
 
@@ -249,20 +283,17 @@ async def test_hit_shows_the_current_upload_and_stored_value_is_anonymous(monkey
     assert second["friendly_message"] == "Analysis complete. Mutual NDA...."
 
 
-async def test_empty_summary_message_never_stores_or_replays_the_old_filename(monkeypatch, redis):
+async def test_empty_summary_is_rejected_and_never_cached(monkeypatch, redis):
     empty_summary = FINAL_OUTPUT.replace('"Mutual NDA."', '""')
     use_main_model(
         monkeypatch,
         main_turns() + [[tool_call("summarize_document")], [text_output(empty_summary)]],
     )
-    await run_enhanced("alice-secret-deal.txt", "alice")
 
-    assert "alice-secret-deal" not in next(iter(redis.store.values()))
+    result = final_result(await run_enhanced("alice-secret-deal.txt", "alice"))
 
-    second = final_result(await run_enhanced("bob-copy.txt", "bob"))
-
-    assert "bob-copy.txt" in second["friendly_message"]
-    assert "alice-secret-deal" not in second["friendly_message"]
+    assert result["type"] == "error"
+    assert redis.store == {}
 
 
 @pytest.mark.parametrize(
@@ -293,19 +324,6 @@ async def test_changed_model_misses(monkeypatch, redis):
     assert len(redis.store) == 2
 
 
-async def test_changed_sub_agent_default_model_misses(monkeypatch, redis):
-    # Sub-agents set no model, so they run on the SDK default, not settings.openai.model.
-    happy_path_model(monkeypatch)
-    await run_enhanced()
-
-    monkeypatch.setenv("OPENAI_DEFAULT_MODEL", "a-different-default")
-    model = happy_path_model(monkeypatch)
-    await run_enhanced()
-
-    assert len(model.inputs) == 4
-    assert len(redis.store) == 2
-
-
 async def test_different_document_misses(monkeypatch, redis):
     happy_path_model(monkeypatch)
     await run_enhanced()
@@ -328,7 +346,9 @@ async def test_cache_key_is_sha256(monkeypatch, redis):
 
 async def test_demo_shows_its_error_message_on_tool_failure(monkeypatch):
     monkeypatch.setattr(
-        model_manager, "openrouter_model", FakeModel(main_turns() + analysis_turns())
+        model_manager,
+        "openrouter_model",
+        AgentRoutedModel(FakeModel(main_turns() + analysis_turns())),
     )
     monkeypatch.setattr(summarizer_agent, "model", FakeModel([RuntimeError("model down")]))
 

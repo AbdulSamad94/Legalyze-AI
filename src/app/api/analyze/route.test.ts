@@ -16,6 +16,10 @@ const fakeDb = vi.hoisted(() => ({
   refundSql: [] as string[],
 }));
 
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: vi.fn(),
+}));
 vi.mock("@/lib/auth-server", () => ({ getSession: vi.fn() }));
 vi.mock("@/lib/services/analysisService", () => ({
   AnalysisService: { collectAndSaveAnalysis: vi.fn() },
@@ -77,6 +81,7 @@ function stubBackend(impl: () => Promise<Response>) {
 const streamOk = () => Promise.resolve(new Response("data: [DONE]\n\n", { status: 200 }));
 
 beforeEach(() => {
+  vi.stubEnv("BACKEND_API_SECRET", "test-shared-secret");
   vi.mocked(getSession).mockReset();
   vi.mocked(getSession).mockResolvedValue({ user: { id: "user-1" } } as never);
   vi.mocked(AnalysisService.collectAndSaveAnalysis).mockReset();

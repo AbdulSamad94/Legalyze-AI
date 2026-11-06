@@ -74,6 +74,7 @@ function registeredSave() {
 
 describe("POST /api/analyze durable save", () => {
     beforeEach(() => {
+        vi.stubEnv("BACKEND_API_SECRET", "test-shared-secret");
         mocks.after.mockReset();
         mocks.savedRows = [];
         vi.spyOn(console, "log").mockImplementation(() => {});
