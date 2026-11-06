@@ -6,9 +6,25 @@ import { postToBackend } from "@/lib/backend-client";
 import { db } from "@/lib/db/client";
 import { user as userTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
-import { DAILY_UPLOAD_LIMIT } from "@/lib/constants/UserConstants";
+import {
+    ALLOWED_UPLOAD_EXTENSIONS,
+    DAILY_UPLOAD_LIMIT,
+    MAX_UPLOAD_SIZE_BYTES,
+} from "@/lib/constants/UserConstants";
+import { refundDailyUpload } from "@/lib/services/quotaService";
+
+function backendErrorDetail(body: string): string {
+    try {
+        const { detail } = JSON.parse(body);
+        if (typeof detail === "string") return detail;
+    } catch {
+        // Not JSON (e.g. a proxy error page): fall through to the generic message.
+    }
+    return "The document could not be processed.";
+}
 
 export async function POST(req: NextRequest) {
+    let quotaReservedFor: string | null = null;
     try {
         const session = await getSession();
         if (!session?.user?.id) {
@@ -16,6 +32,22 @@ export async function POST(req: NextRequest) {
         }
 
         const userId = session.user.id;
+
+        const formData = await req.formData().catch(() => null);
+        const file = formData?.get("file");
+
+        if (!(file instanceof File)) {
+            return NextResponse.json({ success: false, error: "No file uploaded" }, { status: 400 });
+        }
+
+        if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+            return NextResponse.json({ success: false, error: "File size must be less than 10MB." }, { status: 413 });
+        }
+
+        const extension = `.${file.name.split(".").pop()?.toLowerCase()}`;
+        if (!ALLOWED_UPLOAD_EXTENSIONS.includes(extension)) {
+            return NextResponse.json({ success: false, error: `Unsupported file type: ${extension}` }, { status: 415 });
+        }
 
         // Check + increment the daily upload limit atomically: a plain
         // read-then-write here lets concurrent requests (e.g. two tabs, or a
@@ -68,12 +100,7 @@ export async function POST(req: NextRequest) {
             }, { status: 429 });
         }
 
-        const formData = await req.formData();
-        const file = formData.get("file") as File | null;
-
-        if (!file) {
-            return NextResponse.json({ success: false, error: "No file uploaded" }, { status: 400 });
-        }
+        quotaReservedFor = userId;
 
         // Prepare request to Python backend
         const backendFormData = new FormData();
@@ -82,6 +109,13 @@ export async function POST(req: NextRequest) {
 
         if (!response.ok || !response.body) {
             const errorText = await response.text();
+            if (response.status >= 400 && response.status < 500) {
+                await refundDailyUpload(userId);
+                return NextResponse.json(
+                    { success: false, error: backendErrorDetail(errorText) },
+                    { status: response.status }
+                );
+            }
             throw new Error(`Backend error (${response.status}): ${errorText}`);
         }
 
@@ -104,6 +138,9 @@ export async function POST(req: NextRequest) {
         return new NextResponse(forwardStream, { headers });
 
     } catch (error) {
+        if (quotaReservedFor) {
+            await refundDailyUpload(quotaReservedFor);
+        }
         return handleApiError(error);
     }
 }
