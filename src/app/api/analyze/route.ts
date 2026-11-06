@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth-server";
 import { AnalysisService } from "@/lib/services/analysisService";
 import { handleApiError } from "@/lib/api-utils";
+import { postToBackend } from "@/lib/backend-client";
 import { db } from "@/lib/db/client";
 import { user as userTable } from "@/lib/db/schema";
 import { eq } from "drizzle-orm";
@@ -77,14 +78,7 @@ export async function POST(req: NextRequest) {
         // Prepare request to Python backend
         const backendFormData = new FormData();
         backendFormData.append("file", file);
-        const fastApiUrl = `${process.env.WEB_URL || 'http://127.0.0.1:8000'}/analyze/`;
-
-        console.log(`[API] Sending request to: ${fastApiUrl}`);
-        const response = await fetch(fastApiUrl, {
-            method: "POST",
-            body: backendFormData,
-            headers: { 'Accept': 'text/event-stream' },
-        });
+        const response = await postToBackend("/analyze/", backendFormData, { 'Accept': 'text/event-stream' });
 
         if (!response.ok || !response.body) {
             const errorText = await response.text();

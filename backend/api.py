@@ -1,25 +1,30 @@
 """API routes for document analysis."""
 
-from fastapi import APIRouter, UploadFile, File, HTTPException, Request
+from fastapi import APIRouter, Depends, UploadFile, File, HTTPException, Request
 from fastapi.responses import StreamingResponse
 import json
 from typing import AsyncGenerator
 
+from auth import require_internal_secret
 from config import settings
 from infrastructure import rate_limiter
 from services.analysis_pipeline import run_demo_pipeline, run_enhanced_pipeline_streamed
 from utils import logger, file_processor
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_internal_secret)])
 
 
 def _get_client_ip(request: Request) -> str:
     """
     Resolve the real client IP.
 
-    Requests may arrive via the Next.js proxy (src/app/api/demo/route.ts),
-    which forwards the original visitor IP in X-Forwarded-For - without this,
-    every demo request would appear to come from the proxy's own IP.
+    Requests arrive via the Next.js proxy (src/app/api/demo/route.ts), which
+    forwards the original visitor IP in X-Forwarded-For - without this, every
+    demo request would appear to come from the proxy's own IP.
+
+    Trusting this header is only safe because the router requires the shared
+    secret: this runs solely for callers proven to be the proxy, so nobody else
+    can pick their own rate limit key by faking the header.
     """
     forwarded_for = request.headers.get("x-forwarded-for")
     if forwarded_for:

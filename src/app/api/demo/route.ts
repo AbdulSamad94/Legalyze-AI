@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
+import { postToBackend } from "@/lib/backend-client";
+import { getClientIp } from "@/lib/rate-limit";
 
 export async function POST(req: NextRequest) {
     try {
@@ -12,17 +14,9 @@ export async function POST(req: NextRequest) {
         const backendFormData = new FormData();
         backendFormData.append("file", file);
 
-        const fastApiUrl = `${process.env.WEB_URL}/demo/`;
-
         // Forward the real visitor IP so the backend's per-IP rate limiter
         // doesn't see every request as coming from this proxy.
-        const clientIp = req.headers.get("x-forwarded-for") || req.headers.get("x-real-ip") || "unknown";
-
-        const response = await fetch(fastApiUrl, {
-            method: "POST",
-            body: backendFormData,
-            headers: { "X-Forwarded-For": clientIp },
-        });
+        const response = await postToBackend("/demo/", backendFormData, { "X-Forwarded-For": getClientIp(req) });
 
         if (!response.ok || !response.body) {
             const errorText = await response.text();

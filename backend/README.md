@@ -51,6 +51,11 @@ OPENAI_API_KEY="sk-..."
 # Required — powers the public /demo/ endpoint
 OPEN_ROUTER_KEY="sk-or-..."
 
+# Required — shared secret the Next.js server sends as X-Internal-Secret. Must
+# equal BACKEND_API_SECRET in the Next.js app. If unset, /demo/ and /analyze/
+# return 503. Generate: openssl rand -hex 32
+BACKEND_API_SECRET="..."
+
 # Optional — result caching + demo rate limiting. If unset, the app runs in
 # degraded mode: no caching, and the demo endpoint is unthrottled.
 REDIS_HOST="localhost"
@@ -82,10 +87,10 @@ uv run python app.py
 
 - `GET /` — service info
 - `GET /health` — reports cache/rate-limiter connection status and model init state
-- `POST /demo/` — public, unauthenticated, rate-limited, no caching or retries (`run_demo_pipeline`)
+- `POST /demo/` — backs the frontend's public demo; rate-limited per visitor IP, no caching or retries (`run_demo_pipeline`)
 - `POST /analyze/` — used by the authenticated frontend flow; adds Redis caching and retry logic (`run_enhanced_pipeline_streamed`)
 
-Both endpoints stream results back as Server-Sent Events.
+Both `POST` endpoints require the `X-Internal-Secret` header (401 if missing or wrong, 503 if `BACKEND_API_SECRET` isn't set on the server) and stream results back as Server-Sent Events. `GET /` and `GET /health` stay public.
 
 ---
 
