@@ -288,7 +288,12 @@ async def run_enhanced_pipeline_streamed(
     user_text: str, filename: str, session_id: str
 ) -> AsyncGenerator[str, None]:
     """Enhanced pipeline with caching and retry logic."""
-    config = RunConfig(tracing_disabled=False, model=model_manager.get_openai_model(), model_provider=None)
+    config = RunConfig(
+        tracing_disabled=False,
+        trace_include_sensitive_data=False,
+        model=model_manager.get_openai_model(),
+        model_provider=None,
+    )
 
     # Initialize cache connection
     await cache_manager.connect()
