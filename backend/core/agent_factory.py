@@ -15,6 +15,7 @@ from .guardrails import (
     final_output_validation_guardrail,
 )
 from .sub_agent_runner import run_sub_agent
+from .untrusted_document import wrap_untrusted_document
 
 enable_verbose_stdout_logging()
 
@@ -61,7 +62,10 @@ ANALYSIS_AGENT_MAX_TURNS = 10
 )
 async def detect_document_type_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     result = await run_sub_agent(
-        ctx, document_detector_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
+        ctx,
+        document_detector_agent,
+        wrap_untrusted_document(ctx.context.document_text),
+        max_turns=SUB_AGENT_MAX_TURNS,
     )
     return result.final_output.model_dump_json()
 
@@ -72,7 +76,10 @@ async def detect_document_type_tool(ctx: RunContextWrapper[SharedContext]) -> st
 )
 async def summarize_document_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     result = await run_sub_agent(
-        ctx, summarizer_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
+        ctx,
+        summarizer_agent,
+        wrap_untrusted_document(ctx.context.document_text),
+        max_turns=SUB_AGENT_MAX_TURNS,
     )
     return result.final_output.model_dump_json()
 
@@ -83,7 +90,10 @@ async def summarize_document_tool(ctx: RunContextWrapper[SharedContext]) -> str:
 )
 async def detect_risks_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     result = await run_sub_agent(
-        ctx, risk_detector_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
+        ctx,
+        risk_detector_agent,
+        wrap_untrusted_document(ctx.context.document_text),
+        max_turns=SUB_AGENT_MAX_TURNS,
     )
     return result.final_output.model_dump_json()
 
@@ -94,7 +104,10 @@ async def detect_risks_tool(ctx: RunContextWrapper[SharedContext]) -> str:
 )
 async def check_clause_tool(ctx: RunContextWrapper[SharedContext]) -> str:
     result = await run_sub_agent(
-        ctx, clause_checker_agent, ctx.context.document_text, max_turns=SUB_AGENT_MAX_TURNS
+        ctx,
+        clause_checker_agent,
+        wrap_untrusted_document(ctx.context.document_text),
+        max_turns=SUB_AGENT_MAX_TURNS,
     )
     return str(result.final_output)
 
@@ -128,6 +141,7 @@ def create_analysis_agent() -> Agent[SharedContext]:
             detect_risks_tool,
             check_clause_tool,
         ],
+        output_guardrails=[final_output_validation_guardrail],
         model_settings=model_settings,
     )
 
@@ -149,6 +163,9 @@ def create_main_agent() -> Agent[SharedContext]:
         instructions=MAIN_AGENT_PROMPT,
         output_type=AgentDecision,
         tools=[detect_document_type_tool],
+        # Only on the entry agent: the SDK runs input guardrails for a run's
+        # first agent, and a second check on analysis_agent would bill the same text twice.
+        input_guardrails=[sensitive_input_guardrail],
         model_settings=model_settings,
     )
 

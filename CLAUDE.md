@@ -2,7 +2,7 @@
 
 AI-powered legal document analyzer: users upload a contract/NDA/agreement, a multi-agent AI pipeline (FastAPI + OpenAI Agents SDK) summarizes it, flags risky clauses, and returns a safe/unsafe verdict, streamed to the browser over SSE. Auth, session, rate-limiting, and persistence live in the Next.js app; the FastAPI service is a stateless-ish analysis engine it calls over HTTP.
 
-Full findings, evidence, and severity-ranked flaws: **see `AUDIT.md`** (last run 2026-07-05). Read it before assuming something works — several advertised features (guardrails, PDF/DOCX extraction, Redis session persistence) are currently dead code; details and exact file/line citations are there, not repeated here.
+Full findings, evidence, and severity-ranked flaws: **see `AUDIT.md`** (last run 2026-07-05). Read it before assuming something works — several advertised features (PDF/DOCX extraction, Redis session persistence) are currently dead code; details and exact file/line citations are there, not repeated here.
 
 ## Directory Map
 
@@ -18,7 +18,7 @@ Full findings, evidence, and severity-ranked flaws: **see `AUDIT.md`** (last run
 **Backend — `backend/`** (FastAPI, Python ≥3.12, `uv`-managed)
 - `app.py` — FastAPI app, CORS, startup/shutdown (model/cache/session init), health endpoints.
 - `api.py` — the two real HTTP endpoints: `POST /demo/` (public, uncached) and `POST /analyze/` (used by the authenticated path, cached+retried). **Both currently decode any uploaded file as raw UTF-8 text** — see `AUDIT.md` C1 before changing upload handling.
-- `core/` — `agent_factory.py` (builds `main_agent`, `analysis_agent`), `agent_definitions.py` (sub-agents: summarizer, risk detector, clause checker, document detector), `agent_prompts.py`, `guardrails.py` (defined but **not currently attached to any agent** — see `AUDIT.md` C2).
+- `core/` — `agent_factory.py` (builds `main_agent`, `analysis_agent`), `agent_definitions.py` (sub-agents: summarizer, risk detector, clause checker, document detector), `agent_prompts.py`, `guardrails.py` (`sensitive_input_guardrail` runs first on `main_agent`; `final_output_validation_guardrail` runs on `analysis_agent`), `untrusted_document.py` (delimiters every document-text model input must go through).
 - `infrastructure/` — `model_manager.py` (OpenAI + OpenRouter model init), `cache_manager.py` (Redis, MD5-keyed result cache — actively used), `redis_session.py` (session storage — connected but **effectively unused**, see `AUDIT.md` M1).
 - `services/analysis_pipeline.py` — `run_demo_pipeline` (simple, no cache/retry) and `run_enhanced_pipeline_streamed` (cache + `RetryHandler` + metrics) — both async generators yielding SSE-formatted strings.
 - `utils/file_processor.py` — full PDF/DOCX/OCR text extraction, fully implemented, **currently dead code** (never called from `api.py`).
